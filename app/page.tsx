@@ -8,28 +8,48 @@ export default function Home() {
   const [chat, setChat] = useState<{ role: string; text: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function sendMessage() {
-    if (!message.trim()) return;
+async function sendMessage() {
+  if (!message.trim()) return;
 
-    const userMsg = message;
-    setChat((prev) => [...prev, { role: "user", text: userMsg }]);
-    setMessage("");
-    setLoading(true);
+  const userMsg = message;
+  setChat((prev) => [...prev, { role: "user", text: userMsg }]);
+  setMessage("");
+  setLoading(true);
 
-    // placeholder for streaming response
-    let aiMessage = "";
-    setChat((prev) => [...prev, { role: "assistant", text: "" }]);
-
+  try {
     const res = await fetch("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ message: userMsg }),
+      body: JSON.stringify({ message: userMsg, history: chat }),
     });
+
+    // 🛑 ERROR HANDLING: Check if the backend threw a 400 or 500 error
+    if (!res.ok) {
+      let errorMessage = "Whoops! The AI server seems to be down.";
+      
+      // Try to extract the specific error message your route.ts sent
+      try {
+        const errorData = await res.json();
+        if (errorData.error) errorMessage = `Error: ${errorData.error}`;
+      } catch (e) {
+        // If it's not JSON (like a server crash), stick to the default message
+      }
+
+      setChat((prev) => [...prev, { role: "assistant", text: errorMessage }]);
+      setLoading(false);
+      return; // Stop execution so it doesn't try to read the stream
+    }
+
+    // ✅ SUCCESS: Set up the empty placeholder and start streaming
+    let aiMessage = "";
+    setChat((prev) => [...prev, { role: "assistant", text: "" }]);
 
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
 
+    if (!reader) throw new Error("No reader available from response");
+
     while (true) {
-      const { done, value } = await reader!.read();
+      const { done, value } = await reader.read();
       if (done) break;
 
       const chunk = decoder.decode(value);
@@ -44,9 +64,17 @@ export default function Home() {
         return updated;
       });
     }
-
-    setLoading(false);
+  } catch (error: any) {
+    // 🛑 CATCH-ALL: Handles network errors or frontend crashes
+    console.error("Fetch Error:", error);
+    setChat((prev) => [
+      ...prev,
+      { role: "assistant", text: "Network error. Please make sure your backend is running." },
+    ]);
+  } finally {
+    setLoading(false); // Always turn off the loading state!
   }
+}
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">

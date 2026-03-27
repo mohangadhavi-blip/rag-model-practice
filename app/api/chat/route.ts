@@ -16,7 +16,7 @@ async function getIndex() {
 
 export async function POST(req: Request) {
   try {
-    const { message } = await req.json();
+    const { message, history } = await req.json();
     if (!message) {
       return Response.json({ error: "No message provided" }, { status: 400 });
     }
@@ -62,9 +62,21 @@ export async function POST(req: Request) {
       "responseSynthesizer:text_qa_template": STRIC_RAG_PROMPT,
     });
 
+    //FORMAT THE HISTORY
+    let finalQuery = message;
+    if (history && history.length > 0) {
+      // Turn the array into a text script: "USER: hi \n ASSISTANT: hello"
+      const historyText = history
+        .map((m: any) => `${m.role.toUpperCase()}: ${m.text}`)
+        .join("\n");
+
+      // Combine the history with the new question
+      finalQuery = `Previous Conversation:\n${historyText}\n\nCurrent Question: ${message}`;
+    }
+
     // 2. Perform the query with streaming enabled
     const response = await queryEngine.query({
-      query: message,
+      query: finalQuery,
       stream: true, // Tell LlamaIndex to stream the response
     });
 
